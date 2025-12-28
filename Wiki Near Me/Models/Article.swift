@@ -18,6 +18,7 @@ struct Article: Identifiable, Codable, Hashable {
     let pageURL: URL?
     let coordinate: Coordinate?
     let source: ArticleSource
+    var pageviews: Int?
     
     /// Wrapper for CLLocationCoordinate2D to make it Codable
     struct Coordinate: Codable, Hashable {
@@ -52,7 +53,8 @@ struct Article: Identifiable, Codable, Hashable {
         thumbnailURL: URL? = nil,
         pageURL: URL? = nil,
         coordinate: Coordinate? = nil,
-        source: ArticleSource
+        source: ArticleSource,
+        pageviews: Int? = nil
     ) {
         self.id = id
         self.title = title
@@ -62,6 +64,7 @@ struct Article: Identifiable, Codable, Hashable {
         self.pageURL = pageURL
         self.coordinate = coordinate
         self.source = source
+        self.pageviews = pageviews
     }
     
     /// Calculate curation score (lower is better)
@@ -72,6 +75,18 @@ struct Article: Identifiable, Codable, Hashable {
         let extractBoost = min(extractLength, 1200) * 0.1
         
         return baseDistance - thumbnailBoost - extractBoost
+    }
+    
+    /// Calculate popularity score (higher is better)
+    /// Falls back to extract length + thumbnail bonus if pageviews unavailable
+    var popularityScore: Int {
+        if let pageviews = pageviews {
+            return pageviews
+        }
+        // Fallback: use extract length + thumbnail bonus as popularity proxy
+        let extractLength = extract?.count ?? 0
+        let thumbnailBonus = thumbnailURL != nil ? 200 : 0
+        return extractLength + thumbnailBonus
     }
     
     /// Check if article meets curation requirements

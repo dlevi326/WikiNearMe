@@ -20,6 +20,17 @@ class NearbyViewModel: NSObject, MKLocalSearchCompleterDelegate {
     var isLoading = false
     var errorMessage: String?
     
+    // Sort option with UserDefaults persistence
+    var sortOption: SortOption = SortOption(rawValue: UserDefaults.standard.string(forKey: "selectedSortOption") ?? "") ?? .curated {
+        didSet {
+            UserDefaults.standard.set(sortOption.rawValue, forKey: "selectedSortOption")
+            // Re-sort articles when option changes
+            if !articles.isEmpty {
+                articles = sortArticles(articles)
+            }
+        }
+    }
+    
     // Location state
     var currentCoordinate: CLLocationCoordinate2D?
     var radiusMeters: Int = 805 // 0.5 miles default
@@ -30,6 +41,21 @@ class NearbyViewModel: NSObject, MKLocalSearchCompleterDelegate {
     private let wikipediaClient = WikipediaClient()
     private let geocoder = CLGeocoder()
     private let searchCompleter = MKLocalSearchCompleter()
+    
+    // Sort options
+    enum SortOption: String, CaseIterable, Codable {
+        case curated = "curated"
+        case distance = "distance"
+        case popularity = "popularity"
+        
+        var displayName: String {
+            switch self {
+            case .curated: return "Smart Sort"
+            case .distance: return "Nearest First"
+            case .popularity: return "Most Popular"
+            }
+        }
+    }
     
     override init() {
         super.init()
@@ -128,6 +154,29 @@ class NearbyViewModel: NSObject, MKLocalSearchCompleterDelegate {
             articles = curated
             isLoading = false
             
+            // Fetch pageviews in background
+            Task.detached { [weak self] in
+                guard let self = self else { return }
+                let titles = curated.map { $0.title }
+                let pageviewsData = await self.wikipediaClient.fetchPageviews(for: titles)
+                
+                await MainActor.run {
+                    // Update articles with pageview data
+                    self.articles = self.articles.map { article in
+                        var updatedArticle = article
+                        if let views = pageviewsData[article.title] {
+                            updatedArticle.pageviews = views
+                        }
+                        return updatedArticle
+                    }
+                    
+                    // Re-sort if popularity sort is active
+                    if self.sortOption == .popularity {
+                        self.articles = self.sortArticles(self.articles)
+                    }
+                }
+            }
+            
         } catch {
             errorMessage = "Failed to fetch articles: \(error.localizedDescription)"
             isLoading = false
@@ -140,11 +189,27 @@ class NearbyViewModel: NSObject, MKLocalSearchCompleterDelegate {
         // Filter by curation criteria
         let filtered = articles.filter { $0.meetsCurationCriteria }
         
-        // Sort by curation score (lower is better)
-        let sorted = filtered.sorted { $0.curationScore() < $1.curationScore() }
+        // Sort based on selected option
+        let sorted = sortArticles(filtered)
         
         // Take top 30
         return Array(sorted.prefix(30))
+    }
+    
+    private func sortArticles(_ articles: [Article]) -> [Article] {
+        switch sortOption {
+        case .curated:
+            // Sort by curation score (lower is better)
+            return articles.sorted { $0.curationScore() < $1.curationScore() }
+            
+        case .distance:
+            // Sort by distance (closer first)
+            return articles.sorted { ($0.distanceMeters ?? Double.infinity) < ($1.distanceMeters ?? Double.infinity) }
+            
+        case .popularity:
+            // Sort by popularity score (higher is better)
+            return articles.sorted { $0.popularityScore > $1.popularityScore }
+        }
     }
     
     // MARK: - Location Search

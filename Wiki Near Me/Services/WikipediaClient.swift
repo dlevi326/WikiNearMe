@@ -13,9 +13,13 @@ actor WikipediaClient {
     private let baseURL = "https://en.wikipedia.org"
     private let apiPath = "/w/api.php"
     private let restPath = "/api/rest_v1/page/summary"
+    private let pageviewsBaseURL = "https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/en.wikipedia/all-access/all-agents"
     
     // In-memory cache for summaries
     private var summaryCache: [String: ArticleSummary] = [:]
+    
+    // In-memory cache for pageviews (title: (views, fetchedAt))
+    private var pageviewsCache: [String: (views: Int, fetchedAt: Date)] = [:]
     
     // MARK: - Data Structures
     
@@ -231,7 +235,83 @@ actor WikipediaClient {
             thumbnailURL: summary.thumbnail.flatMap { URL(string: $0.source) },
             pageURL: summary.content_urls.flatMap { URL(string: $0.desktop.page) },
             coordinate: finalCoordinate,
-            source: article.source
+            source: article.source,
+            pageviews: article.pageviews
         )
+    }
+    
+    // MARK: - Pageviews API
+    
+    /// Fetch 30-day pageview counts for articles
+    func fetchPageviews(for titles: [String]) async -> [String: Int] {
+        var results: [String: Int] = [:]
+        let cacheExpiryInterval: TimeInterval = 24 * 60 * 60 // 24 hours
+        let now = Date()
+        
+        // Date range: last 30 days
+        let endDate = Calendar.current.date(byAdding: .day, value: -1, to: now)!
+        let startDate = Calendar.current.date(byAdding: .day, value: -30, to: endDate)!
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyyMMdd"
+        let startDateStr = dateFormatter.string(from: startDate)
+        let endDateStr = dateFormatter.string(from: endDate)
+        
+        await withTaskGroup(of: (String, Int?).self) { group in
+            for title in titles {
+                // Check cache first
+                if let cached = pageviewsCache[title],
+                   now.timeIntervalSince(cached.fetchedAt) < cacheExpiryInterval {
+                    results[title] = cached.views
+                    continue
+                }
+                
+                // Fetch from API
+                group.addTask {
+                    let views = await self.fetchPageviewsForTitle(title, start: startDateStr, end: endDateStr)
+                    return (title, views)
+                }
+            }
+            
+            // Collect results
+            for await (title, views) in group {
+                if let views = views {
+                    results[title] = views
+                    // Cache the result
+                    pageviewsCache[title] = (views: views, fetchedAt: now)
+                }
+            }
+        }
+        
+        return results
+    }
+    
+    private func fetchPageviewsForTitle(_ title: String, start: String, end: String) async -> Int? {
+        guard let encodedTitle = title.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            return nil
+        }
+        
+        let urlString = "\(pageviewsBaseURL)/\(encodedTitle)/daily/\(start)/\(end)"
+        guard let url = URL(string: urlString) else { return nil }
+        
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            
+            struct PageviewsResponse: Codable {
+                let items: [PageviewItem]
+                
+                struct PageviewItem: Codable {
+                    let views: Int
+                }
+            }
+            
+            let response = try JSONDecoder().decode(PageviewsResponse.self, from: data)
+            // Sum up all daily views
+            let totalViews = response.items.reduce(0) { $0 + $1.views }
+            return totalViews
+        } catch {
+            // Silently fail - pageviews are optional
+            return nil
+        }
     }
 }
