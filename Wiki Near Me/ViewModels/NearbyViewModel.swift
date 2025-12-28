@@ -34,7 +34,9 @@ class NearbyViewModel {
     }
     
     func setRadiusMiles(_ miles: Double) {
-        radiusMeters = Int(miles * 1609.34)
+        // Convert to meters with minimum of 10 meters
+        let meters = miles * 1609.34
+        radiusMeters = max(10, Int(meters))
     }
     
     // MARK: - Refresh Articles
@@ -84,8 +86,35 @@ class NearbyViewModel {
                 maxConcurrent: 8
             )
             
+            // Calculate distance for articles that have coordinates but no distance
+            let articlesWithDistance = articlesWithSummaries.map { article -> Article in
+                if article.distanceMeters == nil, let articleCoord = article.coordinate {
+                    let distance = calculateDistance(
+                        from: coordinate,
+                        to: articleCoord.clCoordinate
+                    )
+                    return Article(
+                        id: article.id,
+                        title: article.title,
+                        distanceMeters: distance,
+                        extract: article.extract,
+                        thumbnailURL: article.thumbnailURL,
+                        pageURL: article.pageURL,
+                        coordinate: article.coordinate,
+                        source: article.source
+                    )
+                }
+                return article
+            }
+            
+            // Filter by radius - only include articles within the specified radius
+            let withinRadius = articlesWithDistance.filter { article in
+                guard let distance = article.distanceMeters else { return false }
+                return distance <= Double(radiusMeters)
+            }
+            
             // Apply curation
-            let curated = curateArticles(articlesWithSummaries)
+            let curated = curateArticles(withinRadius)
             
             articles = curated
             isLoading = false
@@ -157,5 +186,13 @@ class NearbyViewModel {
     
     func clearSelection() {
         selectedArticle = nil
+    }
+    
+    // MARK: - Helper
+    
+    private func calculateDistance(from: CLLocationCoordinate2D, to: CLLocationCoordinate2D) -> Double {
+        let fromLocation = CLLocation(latitude: from.latitude, longitude: from.longitude)
+        let toLocation = CLLocation(latitude: to.latitude, longitude: to.longitude)
+        return fromLocation.distance(from: toLocation)
     }
 }

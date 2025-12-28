@@ -49,6 +49,7 @@ actor WikipediaClient {
         let content_urls: ContentURLs?
         let type: String?
         let description: String?
+        let coordinates: Coordinates?
         
         struct Thumbnail: Codable {
             let source: String
@@ -60,6 +61,11 @@ actor WikipediaClient {
             struct DesktopURL: Codable {
                 let page: String
             }
+        }
+        
+        struct Coordinates: Codable {
+            let lat: Double
+            let lon: Double
         }
         
         var isDisambiguation: Bool {
@@ -207,14 +213,24 @@ actor WikipediaClient {
     // MARK: - Helper
     
     private func mergeArticleWithSummary(_ article: Article, summary: ArticleSummary) -> Article {
-        Article(
+        // Use summary coordinates if article doesn't have them
+        let finalCoordinate: Article.Coordinate?
+        if let articleCoord = article.coordinate {
+            finalCoordinate = articleCoord
+        } else if let summaryCoord = summary.coordinates {
+            finalCoordinate = Article.Coordinate(latitude: summaryCoord.lat, longitude: summaryCoord.lon)
+        } else {
+            finalCoordinate = nil
+        }
+        
+        return Article(
             id: article.id,
             title: summary.title,
             distanceMeters: article.distanceMeters,
             extract: summary.extract,
             thumbnailURL: summary.thumbnail.flatMap { URL(string: $0.source) },
             pageURL: summary.content_urls.flatMap { URL(string: $0.desktop.page) },
-            coordinate: article.coordinate,
+            coordinate: finalCoordinate,
             source: article.source
         )
     }
