@@ -61,24 +61,70 @@ class LocationManager: NSObject {
             return Self.demoLocation
             
         case .notDetermined:
-            requestPermissionIfNeeded()
-            // Wait a bit for user to respond
-            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
-            // Check again after permission request
-            if authorizationStatus == .denied || authorizationStatus == .restricted {
+            // Request permission and wait for response
+            return await withCheckedContinuation { continuation in
+                // Store continuation temporarily to resume after authorization
+                Task { @MainActor in
+                    requestPermissionIfNeeded()
+                    
+                    // Poll for authorization change (up to 30 seconds)
+                    for _ in 0..<60 {
+                        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+                        
+                        // Check if authorization changed
+                        if authorizationStatus != .notDetermined {
+                            break
+                        }
+                    }
+                    
+                    // After authorization is determined, fetch location or use demo
+                    if authorizationStatus == .denied || authorizationStatus == .restricted {
+                        isUsingDemoLocation = true
+                        currentLocation = Self.demoLocation
+                        continuation.resume(returning: Self.demoLocation)
+                    } else if authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways {
+                        // Now fetch the actual location
+                        if let location = await self.performLocationFetch() {
+                            isUsingDemoLocation = false
+                            currentLocation = location
+                            continuation.resume(returning: location)
+                        } else {
+                            // Fall back to demo if fetch fails
+                            isUsingDemoLocation = true
+                            currentLocation = Self.demoLocation
+                            continuation.resume(returning: Self.demoLocation)
+                        }
+                    } else {
+                        // Still not determined after timeout - use demo
+                        isUsingDemoLocation = true
+                        currentLocation = Self.demoLocation
+                        continuation.resume(returning: Self.demoLocation)
+                    }
+                }
+            }
+            
+        case .authorizedWhenInUse, .authorizedAlways:
+            // Already authorized - fetch location
+            if let location = await performLocationFetch() {
+                isUsingDemoLocation = false
+                currentLocation = location
+                return location
+            } else {
+                // Fall back to demo on error
                 isUsingDemoLocation = true
                 currentLocation = Self.demoLocation
                 return Self.demoLocation
             }
             
-        case .authorizedWhenInUse, .authorizedAlways:
-            break
-            
         @unknown default:
-            break
+            isUsingDemoLocation = true
+            currentLocation = Self.demoLocation
+            return Self.demoLocation
         }
-        
-        // Request one-time location
+    }
+    
+    /// Helper to perform the actual location fetch
+    private func performLocationFetch() async -> CLLocationCoordinate2D? {
         return await withCheckedContinuation { continuation in
             self.locationContinuation = continuation
             locationManager.requestLocation()
