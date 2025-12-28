@@ -7,12 +7,13 @@
 
 import Foundation
 import CoreLocation
+import MapKit
 import Observation
 
 /// ViewModel managing nearby article discovery and state
 @MainActor
 @Observable
-class NearbyViewModel {
+class NearbyViewModel: NSObject, MKLocalSearchCompleterDelegate {
     // State
     var articles: [Article] = []
     var selectedArticle: Article?
@@ -23,10 +24,18 @@ class NearbyViewModel {
     var currentCoordinate: CLLocationCoordinate2D?
     var radiusMeters: Int = 805 // 0.5 miles default
     var searchQuery = ""
+    var locationSuggestions: [LocationSuggestion] = []
     
     // Services
     private let wikipediaClient = WikipediaClient()
     private let geocoder = CLGeocoder()
+    private let searchCompleter = MKLocalSearchCompleter()
+    
+    override init() {
+        super.init()
+        searchCompleter.delegate = self
+        searchCompleter.resultTypes = [.address, .pointOfInterest]
+    }
     
     // Computed
     var radiusMiles: Double {
@@ -140,6 +149,60 @@ class NearbyViewModel {
     
     // MARK: - Location Search
     
+    /// Fetch location suggestions for autocomplete
+    func fetchLocationSuggestions(for query: String) {
+        guard !query.isEmpty else {
+            locationSuggestions = []
+            searchCompleter.cancel()
+            return
+        }
+        
+        searchCompleter.queryFragment = query
+    }
+    
+    /// MKLocalSearchCompleterDelegate method
+    nonisolated func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
+        Task { @MainActor in
+            // Convert search results to location suggestions
+            let results = completer.results.prefix(8).map { result in
+                LocationSuggestion(
+                    title: result.title,
+                    subtitle: result.subtitle,
+                    completion: result
+                )
+            }
+            locationSuggestions = results
+        }
+    }
+    
+    /// MKLocalSearchCompleterDelegate method
+    nonisolated func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
+        Task { @MainActor in
+            locationSuggestions = []
+        }
+    }
+    
+    /// Select a location from suggestions
+    func selectLocationSuggestion(_ suggestion: LocationSuggestion) async {
+        guard let completion = suggestion.completion else { return }
+        
+        // Perform search to get the actual coordinate
+        let searchRequest = MKLocalSearch.Request(completion: completion)
+        let search = MKLocalSearch(request: searchRequest)
+        
+        do {
+            let response = try await search.start()
+            if let mapItem = response.mapItems.first {
+                currentCoordinate = mapItem.placemark.coordinate
+                searchQuery = suggestion.title
+                locationSuggestions = []
+                await refreshArticles()
+            }
+        } catch {
+            errorMessage = "Failed to resolve location"
+        }
+    }
+    
     func searchLocation(_ query: String) async {
         guard !query.isEmpty else { return }
         
@@ -169,6 +232,7 @@ class NearbyViewModel {
     
     func useCurrentLocation(from locationManager: LocationManager) async {
         searchQuery = ""
+        locationSuggestions = []
         
         if let location = await locationManager.fetchLocation() {
             currentCoordinate = location
@@ -194,5 +258,24 @@ class NearbyViewModel {
         let fromLocation = CLLocation(latitude: from.latitude, longitude: from.longitude)
         let toLocation = CLLocation(latitude: to.latitude, longitude: to.longitude)
         return fromLocation.distance(from: toLocation)
+    }
+}
+
+// MARK: - Location Suggestion
+
+struct LocationSuggestion: Identifiable, Equatable {
+    let id = UUID()
+    let title: String
+    let subtitle: String
+    let completion: MKLocalSearchCompletion?
+    
+    init(title: String, subtitle: String, completion: MKLocalSearchCompletion?) {
+        self.title = title
+        self.subtitle = subtitle
+        self.completion = completion
+    }
+    
+    static func == (lhs: LocationSuggestion, rhs: LocationSuggestion) -> Bool {
+        lhs.id == rhs.id
     }
 }

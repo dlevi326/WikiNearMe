@@ -15,6 +15,7 @@ struct NearbyView: View {
     @State private var viewMode: ViewMode = .list
     @State private var searchText = ""
     @State private var showingDetail = false
+    @State private var isSearchFocused = false
     
     enum ViewMode {
         case list, map
@@ -95,43 +96,113 @@ struct NearbyView: View {
     }
     
     private var searchBar: some View {
-        HStack(spacing: 12) {
-            HStack {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
-                    .font(.system(size: 14))
-                TextField("Search location...", text: $searchText)
-                    .onSubmit {
-                        Task {
-                            await viewModel.searchLocation(searchText)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+                        .font(.system(size: 14))
+                    TextField("Search location...", text: $searchText)
+                        .onChange(of: searchText) { oldValue, newValue in
+                            viewModel.fetchLocationSuggestions(for: newValue)
+                        }
+                        .onSubmit {
+                            Task {
+                                await viewModel.searchLocation(searchText)
+                                isSearchFocused = false
+                            }
+                        }
+                    
+                    if !searchText.isEmpty {
+                        Button {
+                            searchText = ""
+                            viewModel.locationSuggestions = []
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                                .font(.system(size: 14))
                         }
                     }
-            }
-            .padding(10)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(.systemBackground))
-                    .shadow(color: .black.opacity(0.05), radius: 5, y: 2)
-            )
-            
-            Button {
-                Task {
-                    await viewModel.useCurrentLocation(from: locationManager)
                 }
-            } label: {
-                Image(systemName: "location.fill")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-                    .background(
-                        LinearGradient(
-                            colors: [.blue, .blue.opacity(0.8)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color(.systemBackground))
+                        .shadow(color: .black.opacity(0.05), radius: 5, y: 2)
+                )
+                
+                Button {
+                    Task {
+                        await viewModel.useCurrentLocation(from: locationManager)
+                    }
+                } label: {
+                    Image(systemName: "location.fill")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .background(
+                            LinearGradient(
+                                colors: [.blue, .blue.opacity(0.8)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
                         )
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .shadow(color: .blue.opacity(0.3), radius: 5, y: 2)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .shadow(color: .blue.opacity(0.3), radius: 5, y: 2)
+                }
+            }
+            
+            // Suggestions dropdown
+            if !viewModel.locationSuggestions.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(viewModel.locationSuggestions) { suggestion in
+                        Button {
+                            searchText = suggestion.title
+                            Task {
+                                await viewModel.selectLocationSuggestion(suggestion)
+                            }
+                        } label: {
+                            HStack(alignment: .top, spacing: 12) {
+                                Image(systemName: "mappin.circle.fill")
+                                    .foregroundColor(.blue)
+                                    .font(.system(size: 20))
+                                    .padding(.top, 2)
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(suggestion.title)
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                        .foregroundColor(.primary)
+                                        .lineLimit(1)
+                                    
+                                    if !suggestion.subtitle.isEmpty {
+                                        Text(suggestion.subtitle)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                
+                                Spacer()
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 12)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        
+                        if suggestion.id != viewModel.locationSuggestions.last?.id {
+                            Divider()
+                                .padding(.leading, 40)
+                        }
+                    }
+                }
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color(.systemBackground))
+                        .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
+                )
+                .padding(.top, 8)
             }
         }
     }
