@@ -22,6 +22,7 @@ struct ArticleDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+
                 // Thumbnail
                 if let thumbnailURL = article.thumbnailURL {
                     AsyncImageView(url: thumbnailURL, width: nil, height: 240)
@@ -84,11 +85,16 @@ struct ArticleDetailView: View {
                         .padding(.vertical, 4)
                     
                     // Extract
-                    if let extract = article.extract {
+                    if let extract = article.extract, !extract.isEmpty {
                         Text(extract)
                             .font(.body)
                             .lineSpacing(6)
                             .foregroundStyle(.primary)
+                    } else {
+                        Text("No description available for this article.")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .italic()
                     }
                     
                     // Action buttons
@@ -128,6 +134,7 @@ struct ArticleDetailView: View {
                                     .shadow(color: isBookmarked ? .blue.opacity(0.3) : .clear, radius: 5, y: 2)
                             )
                         }
+                        .disabled(article.extract == nil || article.extract?.isEmpty == true)
                         
                         // Open in Safari button
                         if article.pageURL != nil {
