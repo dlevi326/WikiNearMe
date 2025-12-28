@@ -22,120 +22,19 @@ struct NearbyView: View {
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // Demo location banner
-                if locationManager.isUsingDemoLocation {
-                    DemoLocationBanner(locationManager: locationManager)
-                }
+            ZStack {
+                backgroundGradient
                 
-                // Controls
-                VStack(spacing: 12) {
-                    // Search bar and location button
-                    HStack {
-                        TextField("Search location...", text: $searchText)
-                            .textFieldStyle(.roundedBorder)
-                            .onSubmit {
-                                Task {
-                                    await viewModel.searchLocation(searchText)
-                                }
-                            }
-                        
-                        Button {
-                            Task {
-                                await viewModel.useCurrentLocation(from: locationManager)
-                            }
-                        } label: {
-                            Image(systemName: "location.fill")
-                        }
-                        .buttonStyle(.bordered)
+                VStack(spacing: 0) {
+                    // Demo location banner
+                    if locationManager.isUsingDemoLocation {
+                        DemoLocationBanner(locationManager: locationManager)
+                            .transition(.move(edge: .top).combined(with: .opacity))
                     }
                     
-                    // Radius slider
-                    HStack {
-                        Text("Radius:")
-                            .font(.subheadline)
-                        
-                        Slider(
-                            value: Binding(
-                                get: { viewModel.radiusMiles },
-                                set: { viewModel.setRadiusMiles($0) }
-                            ),
-                            in: 0.1...5.0,
-                            step: 0.1
-                        )
-                        
-                        Text(String(format: "%.1f mi", viewModel.radiusMiles))
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 60, alignment: .trailing)
-                    }
-                    
-                    // View mode and refresh
-                    HStack {
-                        Picker("View", selection: $viewMode) {
-                            Text("List").tag(ViewMode.list)
-                            Text("Map").tag(ViewMode.map)
-                        }
-                        .pickerStyle(.segmented)
-                        
-                        Button {
-                            Task {
-                                await viewModel.refreshArticles()
-                            }
-                        } label: {
-                            Label("Refresh", systemImage: "arrow.clockwise")
-                                .labelStyle(.iconOnly)
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(viewModel.isLoading)
-                    }
-                }
-                .padding()
-                .background(Color(.systemGroupedBackground))
+                    controlsCard
                 
-                // Content
-                ZStack {
-                    if viewModel.isLoading {
-                        VStack(spacing: 16) {
-                            ProgressView()
-                            Text("Discovering nearby articles...")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                    } else if let error = viewModel.errorMessage {
-                        ContentUnavailableView {
-                            Label("Error", systemImage: "exclamationmark.triangle")
-                        } description: {
-                            Text(error)
-                        } actions: {
-                            Button("Retry") {
-                                Task {
-                                    await viewModel.refreshArticles()
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                    } else if viewModel.articles.isEmpty {
-                        ContentUnavailableView(
-                            "No Articles Found",
-                            systemImage: "doc.text.magnifyingglass",
-                            description: Text("Try increasing the search radius or searching a different location")
-                        )
-                    } else {
-                        // Show list or map
-                        switch viewMode {
-                        case .list:
-                            ArticleListView(
-                                articles: viewModel.articles,
-                                selectedArticle: $viewModel.selectedArticle
-                            )
-                        case .map:
-                            ArticleMapView(
-                                articles: viewModel.articles,
-                                selectedArticle: $viewModel.selectedArticle
-                            )
-                        }
-                    }
+                    contentView
                 }
             }
             .navigationTitle("NearbyWiki")
@@ -167,6 +66,209 @@ struct NearbyView: View {
             }
         }
     }
+    
+    // MARK: - Subviews
+    
+    private var backgroundGradient: some View {
+        LinearGradient(
+            colors: [Color(.systemBackground), Color(.systemGroupedBackground)],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .ignoresSafeArea()
+    }
+    
+    private var controlsCard: some View {
+        VStack(spacing: 16) {
+            searchBar
+            radiusSlider
+            viewModeControls
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color(.secondarySystemGroupedBackground))
+                .shadow(color: .black.opacity(0.08), radius: 10, y: 5)
+        )
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+    
+    private var searchBar: some View {
+        HStack(spacing: 12) {
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
+                    .font(.system(size: 14))
+                TextField("Search location...", text: $searchText)
+                    .onSubmit {
+                        Task {
+                            await viewModel.searchLocation(searchText)
+                        }
+                    }
+            }
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(.systemBackground))
+                    .shadow(color: .black.opacity(0.05), radius: 5, y: 2)
+            )
+            
+            Button {
+                Task {
+                    await viewModel.useCurrentLocation(from: locationManager)
+                }
+            } label: {
+                Image(systemName: "location.fill")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(
+                        LinearGradient(
+                            colors: [.blue, .blue.opacity(0.8)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .shadow(color: .blue.opacity(0.3), radius: 5, y: 2)
+            }
+        }
+    }
+    
+    private var radiusSlider: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Search Radius")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Spacer()
+                Text(String(format: "%.1f mi", viewModel.radiusMiles))
+                    .font(.subheadline)
+                    .foregroundStyle(.blue)
+                    .fontWeight(.semibold)
+            }
+            
+            Slider(
+                value: Binding(
+                    get: { viewModel.radiusMiles },
+                    set: { viewModel.setRadiusMiles($0) }
+                ),
+                in: 0.1...5.0,
+                step: 0.1
+            )
+            .tint(.blue)
+        }
+    }
+    
+    private var viewModeControls: some View {
+        HStack(spacing: 12) {
+            Picker("View", selection: $viewMode) {
+                Label("List", systemImage: "list.bullet").tag(ViewMode.list)
+                Label("Map", systemImage: "map").tag(ViewMode.map)
+            }
+            .pickerStyle(.segmented)
+            
+            Button {
+                Task {
+                    await viewModel.refreshArticles()
+                }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(viewModel.isLoading ? Color.secondary : Color.blue)
+                    .frame(width: 44, height: 44)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color(.systemBackground))
+                            .shadow(color: .black.opacity(0.05), radius: 5, y: 2)
+                    )
+            }
+            .disabled(viewModel.isLoading)
+            .rotationEffect(.degrees(viewModel.isLoading ? 360 : 0))
+            .animation(
+                viewModel.isLoading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default,
+                value: viewModel.isLoading
+            )
+        }
+    }
+    
+    private var contentView: some View {
+        ZStack {
+            if viewModel.isLoading {
+                loadingView
+            } else if let error = viewModel.errorMessage {
+                errorView(error: error)
+            } else if viewModel.articles.isEmpty {
+                emptyView
+            } else {
+                articlesView
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: viewModel.isLoading)
+        .animation(.easeInOut(duration: 0.3), value: viewModel.articles.isEmpty)
+        .animation(.easeInOut(duration: 0.2), value: viewMode)
+    }
+    
+    private var loadingView: some View {
+        VStack(spacing: 20) {
+            ProgressView()
+                .scaleEffect(1.2)
+                .tint(.blue)
+            Text("Discovering nearby articles...")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .transition(.opacity)
+    }
+    
+    private func errorView(error: String) -> some View {
+        ContentUnavailableView {
+            Label("Error", systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.red)
+        } description: {
+            Text(error)
+                .multilineTextAlignment(.center)
+        } actions: {
+            Button("Retry") {
+                Task {
+                    await viewModel.refreshArticles()
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.blue)
+        }
+        .transition(.opacity)
+    }
+    
+    private var emptyView: some View {
+        ContentUnavailableView(
+            "No Articles Found",
+            systemImage: "doc.text.magnifyingglass",
+            description: Text("Try increasing the search radius or searching a different location")
+        )
+        .transition(.opacity)
+    }
+    
+    private var articlesView: some View {
+        Group {
+            switch viewMode {
+            case .list:
+                ArticleListView(
+                    articles: viewModel.articles,
+                    selectedArticle: $viewModel.selectedArticle
+                )
+                .transition(.opacity)
+            case .map:
+                ArticleMapView(
+                    articles: viewModel.articles,
+                    selectedArticle: $viewModel.selectedArticle
+                )
+                .transition(.opacity)
+            }
+        }
+    }
 }
 
 /// Banner shown when using demo location
@@ -174,13 +276,14 @@ struct DemoLocationBanner: View {
     let locationManager: LocationManager
     
     var body: some View {
-        HStack {
+        HStack(spacing: 12) {
             Image(systemName: "info.circle.fill")
                 .foregroundStyle(.orange)
+                .font(.system(size: 16))
             
             Text("Using demo city (NYC). Enable location in Settings to use your location.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
             
             Spacer()
             
@@ -188,12 +291,26 @@ struct DemoLocationBanner: View {
                 locationManager.openSettings()
             }
             .font(.caption)
-            .buttonStyle(.bordered)
+            .fontWeight(.medium)
+            .buttonStyle(.borderedProminent)
+            .tint(.orange)
             .controlSize(.small)
         }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
-        .background(Color.orange.opacity(0.1))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            LinearGradient(
+                colors: [Color.orange.opacity(0.15), Color.orange.opacity(0.08)],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        )
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundColor(.orange.opacity(0.2)),
+            alignment: .bottom
+        )
     }
 }
 

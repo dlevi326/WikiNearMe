@@ -52,25 +52,49 @@ struct ArticlePreviewSheet: View {
     @State private var showingDetail = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 14) {
+                // Content
                 VStack(alignment: .leading, spacing: 8) {
                     Text(article.title)
                         .font(.headline)
+                        .fontWeight(.semibold)
                         .lineLimit(2)
+                        .foregroundStyle(.primary)
                     
                     if let distance = article.distanceMeters {
-                        Text(DistanceFormatter.format(meters: distance))
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                        HStack(spacing: 4) {
+                            Image(systemName: "location.fill")
+                                .font(.system(size: 10))
+                            Text(DistanceFormatter.format(meters: distance))
+                                .font(.subheadline)
+                        }
+                        .foregroundStyle(.blue)
                     }
                 }
                 
                 Spacer()
                 
+                // Thumbnail
                 if let thumbnailURL = article.thumbnailURL {
-                    AsyncImageView(url: thumbnailURL, width: 60, height: 60)
-                        .cornerRadius(8)
+                    AsyncImageView(url: thumbnailURL, width: 80, height: 80)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
+                } else {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.blue.opacity(0.3), Color.purple.opacity(0.3)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 80, height: 80)
+                        .overlay(
+                            Image(systemName: "text.document")
+                                .font(.system(size: 24))
+                                .foregroundStyle(.white)
+                        )
                 }
             }
             
@@ -79,17 +103,34 @@ struct ArticlePreviewSheet: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
+                    .multilineTextAlignment(.leading)
             }
             
             Button {
                 showingDetail = true
             } label: {
-                Text("Open")
-                    .frame(maxWidth: .infinity)
+                HStack {
+                    Text("View Details")
+                        .fontWeight(.semibold)
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(
+                    LinearGradient(
+                        colors: [.blue, .blue.opacity(0.8)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .shadow(color: .blue.opacity(0.3), radius: 5, y: 2)
             }
-            .buttonStyle(.borderedProminent)
         }
-        .padding()
+        .padding(20)
+        .background(Color(.systemBackground))
         .sheet(isPresented: $showingDetail) {
             NavigationStack {
                 ArticleDetailView(article: article)
