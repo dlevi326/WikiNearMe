@@ -8,17 +8,26 @@
 import SwiftUI
 
 struct ContentView: View {
+    @Environment(NearbyViewModel.self) private var nearbyViewModel
+    
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        TabView {
+            NearbyView(viewModel: nearbyViewModel)
+                .tabItem {
+                    Label("Nearby", systemImage: "location.circle.fill")
+                }
+            
+            BookmarksView()
+                .tabItem {
+                    Label("Bookmarks", systemImage: "bookmark.fill")
+                }
         }
-        .padding()
     }
 }
 
 #Preview {
     ContentView()
+        .environment(NearbyViewModel())
+        .environment(LocationManager())
+        .modelContainer(for: Bookmark.self, inMemory: true)
 }
